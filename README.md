@@ -1,6 +1,3 @@
-Here’s a **clean, professional, hackathon-level README** — structured, technical, and aligned with your systems mindset.
-
----
 
 # 🛡️ Intelligent Intrusion Detection System (PS-06)
 
