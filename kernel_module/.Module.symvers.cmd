@@ -1,0 +1,1 @@
+savedcmd_/home/anilreddy/Documents/Projects/IIDS/kernel_module/Module.symvers :=  scripts/mod/modpost -M -m -a      -o /home/anilreddy/Documents/Projects/IIDS/kernel_module/Module.symvers -T /home/anilreddy/Documents/Projects/IIDS/kernel_module/modules.order -i Module.symvers -e 
