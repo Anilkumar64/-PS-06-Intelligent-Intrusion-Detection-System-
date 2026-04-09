@@ -7,6 +7,8 @@
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <signal.h>
+#include <climits>
+#include <libgen.h>
 
 MLBridge::MLBridge()
 {
@@ -39,10 +41,13 @@ bool MLBridge::startProcess()
         close(out_pipe[0]);
         close(out_pipe[1]);
 
-        // Look for ml_scorer.py next to executable
-        execlp("python3", "python3", "ml_scorer.py", nullptr);
+        // Resolve ml_scorer.py path relative to executable to prevent
+        // path hijacking (CWE-426). The IDS runs as root, so a relative
+        // path would allow an attacker to substitute a malicious script.
+        std::string scorerPath = resolveScriptPath("ml_scorer.py");
+        execlp("python3", "python3", scorerPath.c_str(), nullptr);
         // fallback
-        execlp("python", "python", "ml_scorer.py", nullptr);
+        execlp("python", "python", scorerPath.c_str(), nullptr);
         _exit(1);
     }
 
@@ -119,4 +124,21 @@ double MLBridge::parseResponse(const std::string &line)
     {
         return 0.0;
     }
+}
+
+std::string MLBridge::resolveScriptPath(const char *scriptName)
+{
+    // Resolve the absolute path of the running executable via /proc/self/exe,
+    // then look for the script in the same directory. This prevents CWE-426
+    // (untrusted search path) when the IDS is running as root.
+    char exePath[PATH_MAX] = {};
+    ssize_t len = readlink("/proc/self/exe", exePath, sizeof(exePath) - 1);
+    if (len > 0)
+    {
+        exePath[len] = '\0';
+        std::string dir = dirname(exePath);
+        return dir + "/" + scriptName;
+    }
+    // Fallback: return the script name as-is (less secure, but functional)
+    return scriptName;
 }

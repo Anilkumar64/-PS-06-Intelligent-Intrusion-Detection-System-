@@ -21,6 +21,7 @@ private:
     void stopProcess();
 
     double parseResponse(const std::string &line);
+    static std::string resolveScriptPath(const char *scriptName);
 
     FILE *m_write{nullptr}; // stdin  of Python process
     FILE *m_read{nullptr};  // stdout of Python process

@@ -3,6 +3,7 @@
 #include <QThread>
 #include <QString>
 #include <memory>
+#include <atomic>
 #include "Types.h"
 #include "../metrics/SystemStats.h"
 
@@ -81,5 +82,5 @@ private:
     QThread *m_processingThread{nullptr};
     QThread *m_detectionThread{nullptr};
 
-    bool m_running{false};
+    std::atomic_bool m_running{false};
 };

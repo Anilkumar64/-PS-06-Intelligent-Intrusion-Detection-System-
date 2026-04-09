@@ -95,9 +95,13 @@ def main():
     # Signal readiness to C++ parent
     print("READY", flush=True)
 
+    MAX_LINE_LEN = 1024  # Defense-in-depth: cap input line length (CWE-400)
     for line in sys.stdin:
         line = line.strip()
         if not line:
+            continue
+        if len(line) > MAX_LINE_LEN:
+            print("0.0", flush=True)
             continue
         try:
             parts = [float(x) for x in line.split(",")]

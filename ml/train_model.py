@@ -12,7 +12,6 @@ Usage:
 import argparse
 import os
 import sys
-import pickle
 
 try:
     import numpy as np
@@ -106,11 +105,14 @@ def train(output_path: str):
     print("\n[IDS Trainer] Training-set report:")
     print(classification_report(y_labels, preds, target_names=["ATTACK", "NORMAL"]))
 
-    # Save
-    with open(output_path, "wb") as f:
-        pickle.dump(pipeline, f)
+    # Save using joblib (safer than pickle — see CWE-502).
+    # WARNING: Only load model files you created yourself or trust completely.
+    # A tampered model file can execute arbitrary code when loaded.
+    import joblib
+    joblib.dump(pipeline, output_path)
     size_kb = os.path.getsize(output_path) / 1024
     print(f"[IDS Trainer] Model saved → {output_path}  ({size_kb:.1f} KB)")
+    print(f"[IDS Trainer] SECURITY NOTE: Only load model files from trusted sources.")
 
 
 # ─── Train from CSV ───────────────────────────────────────────────────────────
@@ -142,9 +144,11 @@ def train_from_csv(csv_path: str, output_path: str):
     ])
     pipeline.fit(X)
 
-    with open(output_path, "wb") as f:
-        pickle.dump(pipeline, f)
+    # Save using joblib (safer than pickle — see CWE-502).
+    import joblib
+    joblib.dump(pipeline, output_path)
     print(f"[IDS Trainer] Model saved → {output_path}")
+    print(f"[IDS Trainer] SECURITY NOTE: Only load model files from trusted sources.")
 
 
 # ─── Entry point ──────────────────────────────────────────────────────────────
