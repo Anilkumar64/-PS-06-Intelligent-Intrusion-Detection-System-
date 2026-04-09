@@ -346,9 +346,32 @@ void MainWindow::onStatsUpdated(const SystemStats &stats)
 void MainWindow::onPipelineError(const QString &msg)
 {
     addLog("Pipeline error: " + msg, "ERROR");
+
     if (m_running)
-        onStartStop(); // auto-stop
-    QMessageBox::critical(this, "IDS — Pipeline Error", msg);
+    {
+        // Reset UI state immediately
+        m_running = false;
+        m_startBtn->setText("▶  Start Capture");
+        m_startBtn->setStyleSheet(
+            "QPushButton {"
+            "  background:#26a269; color:#fff; border:none;"
+            "  border-radius:6px; font-weight:600; font-size:13px;"
+            "}"
+            "QPushButton:hover { background:#2ec27e; }");
+        m_pulseTimer->stop();
+        m_uptimeTimer->stop();
+        m_ifaceCombo->setEnabled(true);
+        m_liveIndicator->setText("⬤  IDLE");
+        m_liveIndicator->setStyleSheet(
+            "color:#585b70; font-size:12px; font-weight:600;");
+
+        // Defer stop — lets the event loop finish draining queued
+        // events before teardown() destroys the pipeline objects
+        QTimer::singleShot(100, this, [this, msg]()
+                           {
+            m_pipeline->stop();
+            QMessageBox::critical(this, "IDS — Pipeline Error", msg); });
+    }
 }
 
 // ─── onPipelineStarted ────────────────────────────────────────────────────────
