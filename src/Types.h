@@ -3,6 +3,7 @@
 #include <string>
 #include <vector>
 #include <chrono>
+#include <cstddef>
 #include <array>
 
 // ─────────────────────────────────────────────
