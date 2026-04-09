@@ -1,0 +1,19 @@
+# Datasets and Archives
+MachineLearningCVE/
+MachineLearningCSV.zip
+MachineLearningCSV.md5
+Core.zip
+ml/*.csv
+ml/*.pkl
+ml/*.log
+
+# Build & Kernel Files
+build/
+bin/
+*.o
+*.ko
+*.mod.c
+*.order
+*.symvers
+*.mod
+.tmp_versions/
