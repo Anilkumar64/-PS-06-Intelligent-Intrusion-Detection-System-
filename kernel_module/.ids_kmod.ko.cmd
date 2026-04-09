@@ -1,0 +1,1 @@
+savedcmd_/home/anilreddy/Documents/Projects/IIDS/kernel_module/ids_kmod.ko := ld -r -m elf_x86_64 -z noexecstack --build-id=sha1  -T scripts/module.lds -o /home/anilreddy/Documents/Projects/IIDS/kernel_module/ids_kmod.ko /home/anilreddy/Documents/Projects/IIDS/kernel_module/ids_kmod.o /home/anilreddy/Documents/Projects/IIDS/kernel_module/ids_kmod.mod.o
