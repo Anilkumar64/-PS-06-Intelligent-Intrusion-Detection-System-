@@ -1,260 +1,175 @@
+# Intelligent Intrusion Detection System
 
-# 🛡️ Intelligent Intrusion Detection System (PS-06)
+A real-time, hybrid network intrusion detection system built in C++20. Captures live packets directly from the NIC, runs them through a multi-threaded processing pipeline, and detects threats using both a rule-based engine and a Python ML model — all with sub-millisecond alert latency.
 
-## 📌 Overview
-
-The **Intelligent Intrusion Detection System (IDS)** is designed to address the increasing complexity and scale of modern cyber threats by providing a **real-time, adaptive, and high-performance network monitoring solution**.
-
-Traditional IDS solutions rely heavily on static signatures, making them ineffective against **zero-day attacks and evolving threat patterns**. This project proposes a **hybrid detection system** that combines:
-
-* ⚡ Rule-based detection (fast, deterministic)
-* 🧠 Machine learning-based anomaly detection (adaptive, intelligent)
-
-The system focuses on **real-time packet analysis**, enabling early detection of suspicious activities before they escalate into full-scale attacks.
+Built and maintained over 8 months as a deep systems engineering project.
 
 ---
 
-## 🧠 System Approach (Mental Model)
+## Architecture
 
-The entire system is designed as a **real-time packet processing pipeline**:
-
-```text
-[Internet Traffic]
-        ↓
-[NIC (Network Interface Card)]
-        ↓
-[Kernel Network Stack → sk_buff]
-        ↓
-[Packet Capture (libpcap)]
-        ↓
-[Feature Extraction Engine]
-        ↓
-[Detection Engine (Rules + AI)]
-        ↓
-[Decision Engine]
-        ↓
-[Alerting & Logging System]
+```
+[NIC]
+  ↓
+[Kernel Module — ids_kmod.ko]        ← custom .ko intercepts at kernel level
+  ↓
+[PacketCapture — libpcap]            ← userspace capture via libpcap
+  ↓
+[PacketParser]                       ← dissects Ethernet → IP → TCP/UDP/ICMP
+  ↓
+[FeatureExtractor + FeatureNormalizer]
+  ↓
+[ProcessingPipeline — lock-free queue]
+  ↓  
+        ┌─────────────────────┬──────────────────────┐
+   [RuleEngine]         [MLBridge → ml_scorer.py]   [FlowTracker]
+   port scan            Random Forest / IForest      per-flow stats
+   SYN flood            trained on CICIDS dataset    FlowTable
+   ARP spoof            MLResultCache                
+        └─────────────────────┴──────────────────────┘
+  ↓
+[DecisionEngine — fuses rule + ML output]
+  ↓
+[AlertsPanel — JSON events, <2ms latency]
+  ↓
+[Qt6 Dashboard — live traffic, alerts, metrics]
 ```
 
-👉 The key idea:
-**We do not store packets — we process them as a continuous stream.**
+---
+
+## What It Does
+
+- **Live packet capture** from NIC using libpcap — no stored pcap files, pure stream processing
+- **Custom kernel module** (`ids_kmod.ko`) that hooks into the kernel network stack
+- **Dual detection engine:**
+  - Rule engine catches known attacks: port scans, SYN floods, ARP spoofing, brute-force
+  - ML bridge calls a Python Random Forest model trained on the CICIDS2017 dataset for anomaly detection
+- **Lock-free packet queue** between capture and analysis threads — sustained throughput in load tests
+- **Per-flow tracking** via FlowTable and FlowTracker for stateful connection analysis
+- **Adaptive thresholds** that adjust to baseline traffic patterns
+- **Qt6 dashboard** with live traffic graph, alert feed, suspicious IP table, and performance metrics
 
 ---
 
-## ⚙️ How It Works
+## Tech Stack
 
-### 1. Packet Ingestion
-
-* Incoming packets arrive at the **NIC**
-* The Linux kernel processes them and represents each packet as an **`sk_buff` structure**
-* The IDS taps into this flow using **libpcap**, without modifying kernel behavior
-
----
-
-### 2. Packet Capture
-
-* Using `libpcap`, the system captures **live network packets in real-time**
-* Captured data includes:
-
-  * Source IP
-  * Destination IP
-  * Port numbers
-  * Protocol (TCP/UDP/ICMP)
-  * Packet size
-  * Timestamp
+| Layer | Technology |
+|---|---|
+| Language | C++20 |
+| Packet Capture | libpcap |
+| Kernel Integration | Custom Linux Kernel Module (.ko) |
+| ML Inference | Python 3, scikit-learn (Random Forest, Isolation Forest) |
+| Training Data | CICIDS2017 Dataset (real attack traffic) |
+| UI | Qt6 (Widgets, Charts) |
+| Build System | CMake 3.20+ |
+| IPC (C++ ↔ Python) | MLBridge subprocess / pipe |
 
 ---
 
-### 3. Feature Extraction
+## Project Structure
 
-Raw packet data is transformed into structured features:
-
-```json
-{
-  "src_ip": "192.168.1.10",
-  "dst_ip": "8.8.8.8",
-  "port": 443,
-  "protocol": "TCP",
-  "packet_rate": 120
-}
+```
+├── Core/
+│   ├── capture/        # PacketCapture (libpcap), NetlinkReceiver
+│   ├── parser/         # PacketParser — full protocol dissection
+│   ├── features/       # FeatureExtractor, FeatureNormalizer
+│   ├── pipeline/       # ProcessingPipeline, lock-free PacketQueue
+│   ├── detection/      # RuleEngine, DecisionEngine, AdaptiveThreshold
+│   ├── flow/           # FlowTracker, FlowTable
+│   ├── ml/             # MLBridge (C++ → Python), MLResultCache
+│   ├── metrics/        # PerformanceMonitor, SystemStats
+│   └── ui/             # Qt6 dashboard components
+├── Kernel_module/      # ids_kmod.c — custom .ko kernel module
+├── ml/                 # train_model.py, ml_scorer.py, model_rf.pkl
+├── MachineLearningCVE/ # CICIDS2017 dataset (real attack pcap CSVs)
+├── tests/              # 4 test suites + simulate_attack.sh
+└── docs/               # Architecture diagrams, demo guide, pipeline SVG
 ```
 
-These features represent **behavioral patterns**, not just raw data.
-
 ---
 
-### 4. Detection Engine
+## Build & Run
 
-#### 🔹 Rule-Based Detection
+### Prerequisites
 
-The first layer detects known attack patterns:
-
-* Port scanning (multiple ports accessed rapidly)
-* SYN flood attacks (high SYN packet rate)
-* Abnormal connection bursts
-
-👉 Provides **instant and deterministic detection**
-
----
-
-#### 🔹 AI-Based Anomaly Detection
-
-The second layer detects unknown threats using unsupervised learning:
-
-* Models used:
-
-  * Isolation Forest
-  * One-Class SVM
-
-👉 Key idea:
-
-* AI does **not analyze raw packets**
-* It analyzes **derived behavioral features**
-
-Example input to model:
-
-```text
-[packet_rate, unique_ports, avg_packet_size, connection_count]
+```bash
+sudo apt update
+sudo apt install build-essential cmake qt6-base-dev qt6-charts-dev libpcap-dev pkg-config python3 python3-pip
+pip3 install -r ml/requirements.txt
 ```
 
-The model learns **normal network behavior** and flags deviations as anomalies.
+### Build Kernel Module
 
----
-
-### 5. Decision Engine
-
-Outputs from both detection layers are combined:
-
-```text
-Rule Engine + AI Model → Final Classification
+```bash
+cd Kernel_module/
+make
+sudo make load       # insmod
+# to unload: sudo make unload
 ```
 
-Classification:
+### Build & Run IDS
 
-* ✅ Normal
-* ⚠️ Suspicious
-* 🚨 Attack
-
----
-
-### 6. Alerting & Logging
-
-Detected threats are logged with full context:
-
-```text
-[ALERT]
-IP: 192.168.1.5
-Type: Port Scan
-Reason: Accessed 200 ports in 2 seconds
-```
-
-The system provides:
-
-* Real-time alerts
-* Attack classification
-* Detailed reasoning
-
----
-
-## 🚀 Key Features
-
-* ⚡ Real-time packet processing (no batch delays)
-* 🧠 Hybrid detection (rules + AI)
-* 📊 Behavioral analysis instead of static signatures
-* 🔍 Explainable alerts (reason-based detection)
-* 🧵 Multi-threaded processing for scalability
-* 🧪 Attack simulation support (e.g., port scan, DoS)
-
----
-
-## 🏗️ Tech Stack
-
-### Core System
-
-* C++20 (high-performance backend)
-* libpcap (packet capture)
-* Multithreading (parallel processing)
-
-### Machine Learning
-
-* Python (scikit-learn)
-* Isolation Forest / One-Class SVM
-
-### Visualization (Optional)
-
-* CLI / Web dashboard (Flask / Node.js)
-
----
-
-## 🧪 Testing & Simulation
-
-The system supports simulated attack scenarios:
-
-* Port scanning (`nmap`)
-* SYN flood / DoS simulation
-* Abnormal traffic generation
-
-Performance metrics:
-
-* Detection latency
-* Throughput (packets/sec)
-* Accuracy of anomaly detection
-
----
-
-## 💣 Core Insight
-
-> This system is not just an IDS — it is a **real-time packet stream analyzer with intelligent behavioral detection**.
-
----
-
-## ⚠️ Design Principles
-
-* No dependency on stored datasets
-* No centralized packet storage
-* Stream-based processing architecture
-* Focus on low latency and real-time response
-
----
-
-## 🔮 Future Enhancements
-
-* Distributed IDS across multiple nodes
-* Integration with firewalls for auto-blocking
-* Deep packet inspection (DPI)
-* Online learning models
-* Cloud-based monitoring dashboard
-
----
-
-## 🧩 Conclusion
-
-By combining **efficient systems programming (C++)** with **intelligent anomaly detection**, this project delivers a scalable and adaptive IDS capable of detecting both known and unknown cyber threats in real time.
-
-It demonstrates a strong integration of:
-
-* Systems-level networking
-* Real-time data processing
-* Applied machine learning
-
-
-#Working
-
-Department 1 — Kernel
-bashcd kernel_module/
-make          # build .ko
-sudo make load    # insmod
-sudo make unload  # rmmod
-
-
-Department 2 — Backend + GUI
-bashcd core/
+```bash
 mkdir build && cd build
-cmake .. && make -j$(nproc)
-sudo ./IDS_System
+cmake ..
+make -j$(nproc)
+sudo ./IDS_System     # root required for raw packet capture
+```
 
-Department 3 — ML
-bashcd ml/
+### Train ML Model (optional — pretrained pkl included)
+
+```bash
+cd ml/
 python3 preprocess.py --input ../MachineLearningCVE --output .
 python3 train_model.py --data . --output .
-# models stay here, core/ binary reads them at runtime
+```
+
+---
+
+## Run Tests
+
+```bash
+cd build/
+./test_parser       # packet parser unit tests
+./test_rules        # rule engine tests
+./test_flow         # flow tracker tests
+./test_comprehensive  # end-to-end pipeline test
+
+# Simulate attacks against a running instance
+bash tests/simulate_attack.sh
+```
+
+---
+
+## Detection Capabilities
+
+| Attack Type | Detection Method |
+|---|---|
+| Port Scan | Rule engine — rapid multi-port access detection |
+| SYN Flood | Rule engine — SYN rate threshold + AdaptiveThreshold |
+| ARP Spoofing | Rule engine — ARP table anomaly detection |
+| Brute Force | Rule engine — connection burst detection |
+| Unknown/Zero-day | ML engine — Isolation Forest anomaly scoring |
+| Traffic Anomalies | ML engine — Random Forest trained on CICIDS2017 |
+
+---
+
+## Performance
+
+- Lock-free queue between capture and analysis threads eliminates blocking
+- MLResultCache prevents redundant inference calls for repeated flow patterns
+- PerformanceMonitor tracks live throughput and detection latency
+
+---
+
+## Dataset
+
+Uses the **CICIDS2017 dataset** from the Canadian Institute for Cybersecurity — real attack traffic including DDoS, PortScan, Web Attacks, and Infiltration scenarios across multiple days.
+
+---
+
+## Demo
+
+A demo recording is available in the repo: `video_20260410_004930.mp4`
+
+Architecture diagrams and pipeline flow SVG are in `docs/`.
